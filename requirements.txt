@@ -1,0 +1,9 @@
+streamlit
+python-dotenv
+langchain
+langchain-openai
+pinecone
+openai
+langchain-pinecone
+fastapi
+uvicorn[standard]
