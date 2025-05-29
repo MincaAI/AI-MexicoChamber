@@ -143,7 +143,7 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     return reply_text
 
 
-def surveillance_inactivite(chat_id: str):
+async def surveillance_inactivite(chat_id: str):
     try:
         history = get_full_conversation(chat_id)
         if has_calendly_link(history):

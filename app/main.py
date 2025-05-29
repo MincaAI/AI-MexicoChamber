@@ -26,7 +26,7 @@ async def chat(req: ChatRequest):
 @app.post("/surveillance_inactivite")
 async def surveillance(req: ChatRequest):
     try:
-        response = surveillance_inactivite(req.chat_id)
+        response = await surveillance_inactivite(req.chat_id)
         return JSONResponse(content=response)
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
