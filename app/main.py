@@ -18,7 +18,7 @@ async def root():
 @app.post("/chat")
 async def chat(req: ChatRequest):
     try:
-        response = agent_response(req.message, chat_id=req.chat_id)
+        response = await agent_response(req.message, chat_id=req.chat_id)
         return JSONResponse(content={"reply": response})
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
