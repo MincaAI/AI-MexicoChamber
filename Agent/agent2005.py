@@ -134,10 +134,6 @@ async def agent_response(user_input: str, chat_id: str) -> str:
                             .replace("{{user_input}}", user_input)\
                             .replace("{{history}}", history or "[Aucune conversation précédente]")\
                             .replace("{{cci_context}}", base_cci_context)
-    print("\n---🧠 CONTEXT WINDOW (prompt complet envoyé au LLM) ---\n")
-    print(prompt)
-    print("\n--- FIN CONTEXTE ---\n")
-    print("\n🧠 Agent :\n", end="", flush=True)
     
     reply = await chain.ainvoke(input=prompt, config={"configurable": {"session_id": chat_id}})
     reply_text = reply.content if hasattr(reply, "content") else str(reply)
@@ -147,10 +143,7 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     return reply_text
 
 
-def surveillance_inactivite(chat_id: str, timeout=50):
-    while True:
-        inactivity_event.clear()
-        if not inactivity_event.wait(timeout):
+def surveillance_inactivite(chat_id: str):
             try:
                 history = get_full_conversation(chat_id)
                 if has_calendly_link(history):
@@ -159,22 +152,19 @@ def surveillance_inactivite(chat_id: str, timeout=50):
                         store_lead_to_google_sheet(lead)
             except Exception:
                 pass
-            sys.exit()
-        time.sleep(1)
 
+# if __name__ == "__main__":
+#     import uuid
+#     chat_id = str(uuid.uuid4())  # 👈 Generate a unique ID per session
+#     print(f"🆔 Session Chat ID: {chat_id}")
+#     threading.Thread(target=surveillance_inactivite, args=(chat_id,), daemon=True).start()
 
-if __name__ == "__main__":
-    import uuid
-    chat_id = str(uuid.uuid4())  # 👈 Generate a unique ID per session
-    print(f"🆔 Session Chat ID: {chat_id}")
-    threading.Thread(target=surveillance_inactivite, args=(chat_id,), daemon=True).start()
-
-    try:
-        while True:
-            user_input = input("💬 Vous : ")
-            inactivity_event.set()
-            reply = asyncio.run(agent_response(user_input, chat_id=chat_id))
-            print(f"\n🧠 Agent :\n{reply}\n")
-    except KeyboardInterrupt:
-        pass
+#     try:
+#         while True:
+#             user_input = input("💬 Vous : ")
+#             inactivity_event.set()
+#             reply = asyncio.run(agent_response(user_input, chat_id=chat_id))
+#             print(f"\n🧠 Agent :\n{reply}\n")
+#     except KeyboardInterrupt:
+#         pass
 

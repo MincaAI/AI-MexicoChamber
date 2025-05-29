@@ -22,3 +22,11 @@ async def chat(req: ChatRequest):
         return JSONResponse(content={"reply": response})
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
+    
+@app.post("/surveillance_inactivite")
+async def surveillance_inactivite(req: ChatRequest):
+    try:
+        response = surveillance_inactivite(req.chat_id)
+        return JSONResponse(content=response)
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
