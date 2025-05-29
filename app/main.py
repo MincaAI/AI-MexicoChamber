@@ -1,7 +1,8 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
-from Agent.agent2005 import agent_response
+from Agent.agent2005 import *
+
 
 
 app = FastAPI()
@@ -22,3 +23,18 @@ async def chat(req: ChatRequest):
         return JSONResponse(content={"reply": response})
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
+    
+class ChatRequest(BaseModel):
+    chat_id: str
+
+@app.post("/surveillance-inactivite")
+def surveillance_inactivite_api(request: ChatRequest):
+    try:
+        history = get_full_conversation(request.chat_id)
+        if has_calendly_link(history):
+            lead = extract_lead_info(history)
+            if lead.get("prenom") != "inconnu" and lead.get("email") != "inconnu":
+                store_lead_to_google_sheet(lead)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

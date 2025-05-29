@@ -1,4 +1,5 @@
 import streamlit as st
+import asyncio
 import uuid
 from Agent.agent2005 import agent_response, extract_lead_info, get_full_conversation
 
@@ -52,16 +53,17 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # === Entrée utilisateur ===
+async def get_assistant_response(prompt, chat_id):
+    return await agent_response(prompt, chat_id)
+
 prompt = st.chat_input("Votre message...")
 if prompt:
-    # Ajouter message utilisateur
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    # Réponse de l'agent
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            response = agent_response(prompt, st.session_state.chat_id)
+            response = asyncio.run(get_assistant_response(prompt, st.session_state.chat_id))
             st.markdown(response)
             st.session_state.messages.append({"role": "assistant", "content": response})

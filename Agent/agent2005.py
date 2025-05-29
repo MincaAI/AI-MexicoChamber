@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import threading
+import asyncio
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -12,6 +13,11 @@ from Agent.storage import store_lead_to_google_sheet  #
 from langchain_core.runnables import RunnableWithMessageHistory
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.chat_history import InMemoryChatMessageHistory
+from langchain.callbacks.base import BaseCallbackHandler
+
+class StreamPrintCallback(BaseCallbackHandler):
+    def on_llm_new_token(self, token: str, **kwargs):
+        print(token, end="", flush=True)
 
 # === 1. Charger les variables d'environnement ===
 load_dotenv()
@@ -22,23 +28,31 @@ PINECONE_INDEX = os.getenv("PINECONE_INDEX")
 # === 2. Initialisation ===
 pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index(PINECONE_INDEX)
-llm = ChatOpenAI(temperature=0.5, model="gpt-4o")
+llm = ChatOpenAI(
+    temperature=0.6,
+    model="gpt-4o",
+    streaming=True,
+    callbacks=[StreamPrintCallback()]
+)
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-retriever = PineconeVectorStore(index=index, embedding=embeddings).as_retriever()
+retriever = PineconeVectorStore(
+    index=index,
+    embedding=embeddings
+).as_retriever(search_kwargs={"k": 2})
 long_term_store = PineconeVectorStore(index=index, embedding=embeddings, namespace="memory")
 
 # Mémoire conversationnelle par utilisateur (chat history)
 chat_histories = {}
 inactivity_event = threading.Event()
 
-def load_evenements_context():
-    try:
-        with open("Data/evenements_structures.txt", encoding="utf-8") as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        return ""
-    except Exception as e:
-        return ""
+#def load_evenements_context():
+#    try:
+#        with open("Data/evenements_structures.txt", encoding="utf-8") as f:
+#            return f.read().strip()
+#    except FileNotFoundError:
+#        return ""
+#    except Exception as e:
+#        return ""
 
 def load_prompt_template():
     with open("prompt_base.txt", encoding="utf-8") as f:
@@ -48,20 +62,20 @@ def load_extraction_prompt_template():
     with open("prompt_extraction.txt", encoding="utf-8") as f:
         return f.read().strip()
     
-evenements_context = load_evenements_context()
+# evenements_context = load_evenements_context()
 
 def get_full_conversation(chat_id: str) -> str:
-    docs = long_term_store.similarity_search(" ", k=150)
-    user_docs = [doc for doc in docs if doc.metadata.get("user_id") == chat_id]
-    user_docs.sort(key=lambda d: d.metadata.get("timestamp", ""))
-    return "\n".join(doc.page_content for doc in user_docs)
+    # Utilise un filtre Pinecone directement au lieu de tout rapatrier et filtrer ensuite
+    docs = long_term_store.similarity_search(" ", k=50, filter={"chat_id": chat_id})
+    docs.sort(key=lambda d: d.metadata.get("timestamp", ""))
+    return "\n".join(doc.page_content for doc in docs)
 
 
 def save_message_to_long_term_memory(role: str, message: str, chat_id: str):
     now = datetime.now(timezone.utc).isoformat()
     doc = Document(
         page_content=f"{role} : {message}",
-        metadata={"user_id": chat_id, "timestamp": now, "type": role}
+        metadata={"chat_id": chat_id, "timestamp": now, "type": role}
     )
     long_term_store.add_documents([doc])
 
@@ -107,7 +121,7 @@ def get_chat_history(chat_id: str):
 chain = RunnableWithMessageHistory(llm, get_chat_history)
 prompt_template = load_prompt_template()
 
-def agent_response(user_input: str, chat_id: str) -> str:
+async def agent_response(user_input: str, chat_id: str) -> str:
     today = datetime.now().strftime("%d %B %Y")
     history = get_full_conversation(chat_id)
 
@@ -119,10 +133,9 @@ def agent_response(user_input: str, chat_id: str) -> str:
     prompt = prompt_template.replace("{{today}}", today)\
                             .replace("{{user_input}}", user_input)\
                             .replace("{{history}}", history or "[Aucune conversation précédente]")\
-                            .replace("{{cci_context}}", base_cci_context)\
-                            .replace("{{evenements_context}}", evenements_context or "[Aucun événement à afficher]")
+                            .replace("{{cci_context}}", base_cci_context)
     
-    reply = chain.invoke(input=prompt, config={"configurable": {"session_id": chat_id}})
+    reply = await chain.ainvoke(input=prompt, config={"configurable": {"session_id": chat_id}})
     reply_text = reply.content if hasattr(reply, "content") else str(reply)
 
     save_message_to_long_term_memory("Utilisateur", user_input, chat_id)
@@ -130,34 +143,31 @@ def agent_response(user_input: str, chat_id: str) -> str:
     return reply_text
 
 
-def surveillance_inactivite(chat_id: str, timeout=50):
-    while True:
-        inactivity_event.clear()
-        if not inactivity_event.wait(timeout):
-            try:
-                history = get_full_conversation(chat_id)
-                if has_calendly_link(history):
-                    lead = extract_lead_info(history)
-                    if lead.get("prenom") != "inconnu" and lead.get("email") != "inconnu":
-                        store_lead_to_google_sheet(lead)
-            except Exception:
-                pass
-            sys.exit()
-        time.sleep(1)
-
-
-if __name__ == "__main__":
-    import uuid
-    chat_id = str(uuid.uuid4())  # 👈 Generate a unique ID per session
-    print(f"🆔 Session Chat ID: {chat_id}")
-    threading.Thread(target=surveillance_inactivite, args=(chat_id,), daemon=True).start()
-
+def surveillance_inactivite(chat_id: str):
     try:
-        while True:
-            user_input = input("💬 Vous : ")
-            inactivity_event.set()
-            reply = agent_response(user_input, chat_id=chat_id)
-            print(f"\n🧠 Agent :\n{reply}\n")
-    except KeyboardInterrupt:
-        pass
+        history = get_full_conversation(chat_id)
+        if has_calendly_link(history):
+            lead = extract_lead_info(history)
+            if lead.get("prenom") != "inconnu" and lead.get("email") != "inconnu":
+                store_lead_to_google_sheet(lead)
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+
+# if __name__ == "__main__":
+#     import uuid
+#     chat_id = str(uuid.uuid4())  # 👈 Generate a unique ID per session
+#     print(f"🆔 Session Chat ID: {chat_id}")
+#     threading.Thread(target=surveillance_inactivite, args=(chat_id,), daemon=True).start()
+
+#     try:
+#         while True:
+#             user_input = input("💬 Vous : ")
+#             inactivity_event.set()
+#             reply = asyncio.run(agent_response(user_input, chat_id=chat_id))
+#             print(f"\n🧠 Agent :\n{reply}\n")
+#     except KeyboardInterrupt:
+#         pass
 
