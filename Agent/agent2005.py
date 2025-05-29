@@ -144,15 +144,15 @@ async def agent_response(user_input: str, chat_id: str) -> str:
 
 
 def surveillance_inactivite(chat_id: str):
-            try:
-                history = get_full_conversation(chat_id)
-                if has_calendly_link(history):
-                    lead = extract_lead_info(history)
-                    if lead.get("prenom") != "inconnu" and lead.get("email") != "inconnu":
-                        store_lead_to_google_sheet(lead)
-            except Exception:
-                pass
-
+    try:
+        history = get_full_conversation(chat_id)
+        if has_calendly_link(history):
+            lead = extract_lead_info(history)
+            if lead.get("prenom") != "inconnu" and lead.get("email") != "inconnu":
+                store_lead_to_google_sheet(lead)
+        return {"status": "success"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 # if __name__ == "__main__":
 #     import uuid
 #     chat_id = str(uuid.uuid4())  # 👈 Generate a unique ID per session
