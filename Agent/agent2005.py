@@ -14,6 +14,7 @@ from langchain_core.runnables import RunnableWithMessageHistory
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain.callbacks.base import BaseCallbackHandler
+from app.service.chat.getAllChat import get_full_conversation_postgre
 
 class StreamPrintCallback(BaseCallbackHandler):
     def on_llm_new_token(self, token: str, **kwargs):
@@ -123,8 +124,8 @@ prompt_template = load_prompt_template()
 
 async def agent_response(user_input: str, chat_id: str) -> str:
     today = datetime.now().strftime("%d %B %Y")
-    history = get_full_conversation(chat_id)
-
+    history = await get_full_conversation_postgre(chat_id)
+    #history = get_full_conversation(chat_id)
     # ➕ Ajouter la recherche de contexte CCI à partir de la question posée
     base_cci_context_docs = retriever.invoke(user_input)
     base_cci_context = "\n\n".join(doc.page_content for doc in base_cci_context_docs) if base_cci_context_docs else "[Pas d'information pertinente dans la base.]"
@@ -141,11 +142,11 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     save_message_to_long_term_memory("Utilisateur", user_input, chat_id)
     save_message_to_long_term_memory("Agent", reply_text, chat_id)
     return reply_text
-
-
+    
 async def surveillance_inactivite(chat_id: str):
     try:
         history = get_full_conversation(chat_id)
+        print("start\n"+history+"\nend")
         if has_calendly_link(history):
             lead = extract_lead_info(history)
             if lead.get("prenom") != "inconnu" and lead.get("email") != "inconnu":
