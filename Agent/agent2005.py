@@ -124,8 +124,7 @@ prompt_template = load_prompt_template()
 
 async def agent_response(user_input: str, chat_id: str) -> str:
     today = datetime.now().strftime("%d %B %Y")
-    history = await get_full_conversation_postgre(chat_id)
-    #history = get_full_conversation(chat_id)
+    history = get_full_conversation(chat_id)
     # ➕ Ajouter la recherche de contexte CCI à partir de la question posée
     base_cci_context_docs = retriever.invoke(user_input)
     base_cci_context = "\n\n".join(doc.page_content for doc in base_cci_context_docs) if base_cci_context_docs else "[Pas d'information pertinente dans la base.]"
@@ -145,13 +144,16 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     
 async def surveillance_inactivite(chat_id: str):
     try:
-        history = get_full_conversation(chat_id)
-        print("start\n"+history+"\nend")
+        result = await get_full_conversation_postgre(chat_id)
+        history = result.get("history", "")
+        chatType = result.get("type", "undefined")
+
         if has_calendly_link(history):
             lead = extract_lead_info(history)
-            if lead.get("prenom") != "inconnu" and lead.get("email") != "inconnu":
-                store_lead_to_google_sheet(lead)
+            store_lead_to_google_sheet(lead, type=chatType)
+
         return {"status": "success"}
+
     except Exception as e:
         return {"status": "error", "message": str(e)}
 # if __name__ == "__main__":

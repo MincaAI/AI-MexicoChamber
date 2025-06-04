@@ -3,8 +3,9 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 import os
+from zoneinfo import ZoneInfo
 
-def store_lead_to_google_sheet(lead_data: dict):
+def store_lead_to_google_sheet(lead_data: dict, type: str = 'undefined'):
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     # Utiliser le chemin relatif à la racine du projet
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -16,7 +17,8 @@ def store_lead_to_google_sheet(lead_data: dict):
     sheet = client.open("CCI_support_agent_lead").sheet1
 
     # Date actuelle (en UTC)
-    date_now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    #date_now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    date_now = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d %H:%M:%S")
 
     # Envoie des données dans l'ordre des colonnes A → F
     sheet.append_row([
@@ -26,5 +28,6 @@ def store_lead_to_google_sheet(lead_data: dict):
         lead_data.get("email", "inconnu"),
         lead_data.get("interet", "inconnu"),
         lead_data.get("score", 1),
-        date_now
+        date_now,        
+        type
     ])

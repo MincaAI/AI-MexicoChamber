@@ -3,7 +3,7 @@
 import os
 from urllib.parse import urlparse
 from dotenv import load_dotenv
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncEngine,async_sessionmaker
 
 load_dotenv()
 
@@ -16,3 +16,5 @@ DATABASE_URL = (
 
 # Exported variable: `sql`
 sql: AsyncEngine = create_async_engine(DATABASE_URL, echo=True)
+engine = create_async_engine(DATABASE_URL, echo=True)
+AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
