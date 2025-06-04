@@ -9,3 +9,4 @@ oauth2client
 fastapi
 uvicorn[standard]
 urllib3<2
+pytz>=2022.7

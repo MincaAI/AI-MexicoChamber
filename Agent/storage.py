@@ -3,7 +3,7 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 import os
-from zoneinfo import ZoneInfo
+import pytz
 
 def store_lead_to_google_sheet(lead_data: dict, type: str = 'undefined'):
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -18,7 +18,8 @@ def store_lead_to_google_sheet(lead_data: dict, type: str = 'undefined'):
 
     # Date actuelle (en UTC)
     #date_now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-    date_now = datetime.now(ZoneInfo("America/Mexico_City")).strftime("%Y-%m-%d %H:%M:%S")
+    mexico_tz = pytz.timezone("America/Mexico_City")
+    date_now = datetime.now(mexico_tz).strftime("%Y-%m-%d %H:%M:%S")
 
     # Envoie des données dans l'ordre des colonnes A → F
     sheet.append_row([
