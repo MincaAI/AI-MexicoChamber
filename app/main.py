@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 from Agent.agent2005 import *
 from typing import Optional
+import traceback
 
 app = FastAPI()
 
@@ -21,7 +22,14 @@ async def chat(req: ChatRequest):
         response = await agent_response(req.message, chat_id=req.chat_id)
         return JSONResponse(content={"reply": response})
     except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+        tb = traceback.format_exc()
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": str(e),
+                "traceback": tb
+            }
+        )
     
 @app.post("/surveillance_inactivite")
 async def surveillance(req: ChatRequest):

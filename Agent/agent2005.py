@@ -187,6 +187,7 @@ async def agent_response(user_input: str, chat_id: str) -> str:
 
     reply = await llm.ainvoke(prompt)
     reply_text = reply.content if hasattr(reply, "content") else str(reply)
+    print(reply_text)  # Affiche la réponse de l'agent dans la console
 
     memory.chat_memory.add_user_message(user_input)
     memory.chat_memory.add_ai_message(reply_text)
@@ -198,6 +199,7 @@ async def agent_response(user_input: str, chat_id: str) -> str:
         redis_client.delete(f"msg_counter:{chat_id}")
         generate_summary_from_memory(memory, chat_id)
 
+    print(reply_text)  # Affiche la réponse de l'agent dans la console
     return reply_text
 
     
