@@ -19,6 +19,7 @@ from app.service.chat.getAllChat import get_full_conversation_postgre
 
 import redis
 import pickle
+import json
 
 load_dotenv()
 
@@ -113,9 +114,14 @@ def load_summary_memory_from_redis(chat_id):
         memory_key="chat_history"
     )
     if data:
-        state = pickle.loads(data)
-        memory.chat_memory.messages = state.get("messages", [])
-        memory.moving_summary_buffer = state.get("summary", "")
+        try:
+            # Redis returns bytes, decode to string
+            state = json.loads(data.decode('utf-8'))
+            memory.chat_memory.messages = state.get("messages", [])
+            memory.moving_summary_buffer = state.get("summary", "")
+        except Exception:
+            # fallback or handle corrupted data
+            pass
     return memory
 
 
@@ -187,7 +193,6 @@ async def agent_response(user_input: str, chat_id: str) -> str:
 
     reply = await llm.ainvoke(prompt)
     reply_text = reply.content if hasattr(reply, "content") else str(reply)
-    print(reply_text)  # Affiche la réponse de l'agent dans la console
 
     memory.chat_memory.add_user_message(user_input)
     memory.chat_memory.add_ai_message(reply_text)
