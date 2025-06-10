@@ -105,8 +105,9 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     memory = get_memory(chat_id)
     messages = memory.chat_memory.messages
     short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in messages[-10:]])
-   
     
+    # Récupération du contexte
+    base_cci_context_docs = retriever.invoke(user_input)
     base_cci_context = "\n\n".join(doc.page_content for doc in base_cci_context_docs) if base_cci_context_docs else "[Pas d'information pertinente dans la base.]"
     
     prompt = prompt_template.replace("{{today}}", today)\
