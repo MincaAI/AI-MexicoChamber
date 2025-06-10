@@ -47,20 +47,20 @@ pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index(PINECONE_INDEX)
 
 # Configuration Claude
-llm = ChatAnthropic(
-    temperature=0.6,
-    model="claude-3-5-sonnet-20241022",
-    streaming=False,
-    anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
-    callbacks=[StreamPrintCallback()]
-)
-
-#llm = ChatOpenAI(
-    #temperature=0.6,
-    #model="gpt-4o",
+#llm = ChatAnthropic(
+  #  temperature=0.6,
+   # model="claude-3-5-sonnet-20241022",
     #streaming=False,
+    #anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
     #callbacks=[StreamPrintCallback()]
 #)
+
+llm = ChatOpenAI(
+    temperature=0.3,
+    model="gpt-4o-mini",
+    streaming=False,
+    callbacks=[StreamPrintCallback()]
+)
 
 
 
@@ -75,47 +75,6 @@ retriever = PineconeVectorStore(
 #new
 summary_store = PineconeVectorStore(index=index, embedding=embeddings,namespace="summaries")  # new
 
-#new
-def save_or_update_summary(chat_id: str, summary: str):
-    doc = Document(
-        page_content=summary,
-        metadata={
-            "chat_id": chat_id,
-            "summary_id": f"summary_{chat_id}",
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-    )
-    # On remplace l'ancien résumé
-    summary_store.delete(ids=[f"summary_{chat_id}"])
-    summary_store.add_documents([doc], ids=[f"summary_{chat_id}"])
-# new 
-def load_summary_from_pinecone(chat_id: str) -> str:
-    docs = summary_store.similarity_search("", k=1, filter={"chat_id": chat_id, "summary_id": f"summary_{chat_id}"})
-    return docs[0].page_content if docs else ""
-# new
-def generate_summary_from_memory(memory: ConversationSummaryBufferMemory, chat_id: str, max_messages: int = 15) -> str:
-    new_messages = memory.chat_memory.messages[-max_messages:]
-    convo_text = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in new_messages])
-
-    if not convo_text.strip():
-        return ""
-
-    old_summary = load_summary_from_pinecone(chat_id)
-
-    prompt = f"""
-    Voici le résumé actuel d'une conversation WhatsApp entre toi et l'utilisateur  :
-    {old_summary or '[aucun résumé pour le moment]'}
-
-    Voici les nouveaux messages à intégrer :
-    {convo_text}
-
-    Génére un **nouveau résumé synthétique mis à jour**, qui conserve les éléments utiles de l'ancien et ajoute les nouvelles informations importantes. Résume en 5 phrases maximum.
-    """
-
-    summary = llm.invoke(prompt).content.strip()
-    save_or_update_summary(chat_id, summary)
-    return summary
-#new
 
 def get_memory(chat_id: str) -> ConversationSummaryBufferMemory:
     redis_url = os.getenv("REDIS_URL")
@@ -140,12 +99,7 @@ def load_prompt_template():
         return f.read().strip()
     
 
-#new 
-def get_and_increment_counter(chat_id: str) -> int:
-    key = f"msg_counter:{chat_id}"
-    counter = redis_client.incr(key, 1)
-    redis_client.expire(key, 86400)  # 24h
-    return counter
+
 
 prompt_template = load_prompt_template()
 async def agent_response(user_input: str, chat_id: str) -> str:
@@ -154,7 +108,7 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     memory = get_memory(chat_id)
     messages = memory.chat_memory.messages
     short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in messages[-10:]])
-    long_term_memory = load_summary_from_pinecone(chat_id)
+   
     
 
     base_cci_context_docs = retriever.invoke(user_input)
@@ -164,7 +118,6 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     prompt = prompt_template.replace("{{today}}", today)\
                             .replace("{{user_input}}", user_input)\
                             .replace("{{short_term_memory}}", short_term_memory or "[Aucune mémoire courte]")\
-                            .replace("{{long_term_memory}}", long_term_memory or "[Aucune mémoire longue]")\
                             .replace("{{cci_context}}", base_cci_context)
     
 
@@ -174,10 +127,7 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     memory.chat_memory.add_message(HumanMessage(content=user_input))
     memory.chat_memory.add_message(AIMessage(content=reply_text))
 
-    counter = get_and_increment_counter(chat_id)
-    if counter >= 15:
-        redis_client.delete(f"msg_counter:{chat_id}")
-        generate_summary_from_memory(memory, chat_id)
+
 
     return reply_text
 
