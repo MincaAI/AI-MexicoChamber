@@ -16,6 +16,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain.memory import ConversationSummaryBufferMemory
+from langchain_core.messages import HumanMessage, AIMessage
 from langchain_community.chat_message_histories import RedisChatMessageHistory
 from app.service.chat.getAllChat import get_full_conversation_postgre
 import redis
@@ -49,6 +50,10 @@ llm = ChatOpenAI(
     streaming=True,
     callbacks=[StreamPrintCallback()]
 )
+
+
+# === 3. Pinecone ===
+
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 retriever = PineconeVectorStore(
     index=index,
@@ -56,7 +61,6 @@ retriever = PineconeVectorStore(
 ).as_retriever(search_kwargs={"k": 2})
 #new
 summary_store = PineconeVectorStore(index=index, embedding=embeddings,namespace="summaries")  # new
-
 
 #new
 def save_or_update_summary(chat_id: str, summary: str):
@@ -102,10 +106,10 @@ def generate_summary_from_memory(memory: ConversationSummaryBufferMemory, chat_i
 
 def get_memory(chat_id: str) -> ConversationSummaryBufferMemory:
     redis_url = os.getenv("REDIS_URL")
-
     history = RedisChatMessageHistory(
-        session_id=chat_id,
-        url=redis_url
+        session_id=f"chat:{chat_id}",
+        url=redis_url,
+        key_prefix="message_store" 
     )
 
     memory = ConversationSummaryBufferMemory(
@@ -135,7 +139,8 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     prompt_template = load_prompt_template()
     today = datetime.now().strftime("%d %B %Y")
     memory = get_memory(chat_id)
-    short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in memory.buffer])
+    messages = memory.chat_memory.messages
+    short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in messages[-20:]])
     long_term_memory = load_summary_from_pinecone(chat_id)
     
 
@@ -153,8 +158,8 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     reply = await llm.ainvoke(prompt)
     reply_text = reply.content if hasattr(reply, "content") else str(reply)
 
-    memory.chat_memory.add_user_message(user_input)
-    memory.chat_memory.add_ai_message(reply_text)
+    memory.chat_memory.add_message(HumanMessage(content=user_input))
+    memory.chat_memory.add_message(AIMessage(content=reply_text))
 
     counter = get_and_increment_counter(chat_id)
     if counter >= 15:
