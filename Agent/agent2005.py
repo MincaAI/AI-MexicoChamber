@@ -58,12 +58,10 @@ index = pc.Index(PINECONE_INDEX)
 llm = ChatOpenAI(
     temperature=0.3,
     model="gpt-4o-mini",
-    streaming=False,
+    streaming=True,
+    max_tokens=400,
     callbacks=[StreamPrintCallback()]
 )
-
-
-
 
 # === 3. Pinecone ===
 
@@ -103,33 +101,42 @@ def load_prompt_template():
 
 prompt_template = load_prompt_template()
 async def agent_response(user_input: str, chat_id: str) -> str:
-    
     today = datetime.now().strftime("%d %B %Y")
     memory = get_memory(chat_id)
     messages = memory.chat_memory.messages
     short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in messages[-10:]])
    
     
-
-    base_cci_context_docs = retriever.invoke(user_input)
     base_cci_context = "\n\n".join(doc.page_content for doc in base_cci_context_docs) if base_cci_context_docs else "[Pas d'information pertinente dans la base.]"
     
-
     prompt = prompt_template.replace("{{today}}", today)\
                             .replace("{{user_input}}", user_input)\
                             .replace("{{short_term_memory}}", short_term_memory or "[Aucune mémoire courte]")\
                             .replace("{{cci_context}}", base_cci_context)
+    try:
+        # Timeout de 9 secondes pour la réponse de l'agent
+        reply = await asyncio.wait_for(llm.ainvoke(prompt), timeout=9.0)
+        reply_text = reply.content if hasattr(reply, "content") else str(reply)
+        
+        # Ajout asynchrone des messages à la mémoire
+        await asyncio.gather(
+            asyncio.get_event_loop().run_in_executor(
+                None, 
+                lambda: memory.chat_memory.add_message(HumanMessage(content=user_input))
+            ),
+            asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: memory.chat_memory.add_message(AIMessage(content=reply_text))
+            )
+        )
+        
+        return reply_text
+        
+    except asyncio.TimeoutError:
+        return "Désolé, pouvez-vous reformuler votre demande ?"
     
 
-    reply = await llm.ainvoke(prompt)
-    reply_text = reply.content if hasattr(reply, "content") else str(reply)
 
-    memory.chat_memory.add_message(HumanMessage(content=user_input))
-    memory.chat_memory.add_message(AIMessage(content=reply_text))
-
-
-
-    return reply_text
 
     
 async def surveillance_inactivite(chat_id: str):
