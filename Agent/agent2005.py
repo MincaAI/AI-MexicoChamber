@@ -5,7 +5,8 @@ import threading
 import asyncio
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_anthropic import ChatAnthropic
+from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain.schema import Document
 from pinecone import Pinecone
@@ -37,6 +38,7 @@ class StreamPrintCallback(BaseCallbackHandler):
 # === 1. Charger les variables d'environnement ===
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_INDEX = os.getenv("PINECONE_INDEX")
 
@@ -44,12 +46,23 @@ PINECONE_INDEX = os.getenv("PINECONE_INDEX")
 pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index(PINECONE_INDEX)
 
-llm = ChatOpenAI(
+# Configuration Claude
+llm = ChatAnthropic(
     temperature=0.6,
-    model="gpt-4o",
-    streaming=True,
+    model="claude-3-5-sonnet-20241022",
+    streaming=False,
+    anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
     callbacks=[StreamPrintCallback()]
 )
+
+#llm = ChatOpenAI(
+    #temperature=0.6,
+    #model="gpt-4o",
+    #streaming=False,
+    #callbacks=[StreamPrintCallback()]
+#)
+
+
 
 
 # === 3. Pinecone ===
@@ -96,7 +109,7 @@ def generate_summary_from_memory(memory: ConversationSummaryBufferMemory, chat_i
     Voici les nouveaux messages à intégrer :
     {convo_text}
 
-    Génére un **nouveau résumé synthétique mis à jour**, qui conserve les éléments utiles de l'ancien et ajoute les nouvelles informations importantes. Résume en 7 phrases maximum.
+    Génére un **nouveau résumé synthétique mis à jour**, qui conserve les éléments utiles de l'ancien et ajoute les nouvelles informations importantes. Résume en 5 phrases maximum.
     """
 
     summary = llm.invoke(prompt).content.strip()
@@ -117,7 +130,7 @@ def get_memory(chat_id: str) -> ConversationSummaryBufferMemory:
         memory_key="chat_history",
         chat_memory=history,
         return_messages=True,
-        max_token_limit=800
+        max_token_limit=600
     )
     return memory
 
@@ -134,13 +147,13 @@ def get_and_increment_counter(chat_id: str) -> int:
     redis_client.expire(key, 86400)  # 24h
     return counter
 
-#update
+prompt_template = load_prompt_template()
 async def agent_response(user_input: str, chat_id: str) -> str:
-    prompt_template = load_prompt_template()
+    
     today = datetime.now().strftime("%d %B %Y")
     memory = get_memory(chat_id)
     messages = memory.chat_memory.messages
-    short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in messages[-20:]])
+    short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in messages[-10:]])
     long_term_memory = load_summary_from_pinecone(chat_id)
     
 
