@@ -10,13 +10,17 @@ from langchain_pinecone import PineconeVectorStore
 from langchain.schema import Document
 from pinecone import Pinecone
 from Agent.Lead_extraction.storage import *
+from Agent.Lead_extraction.extraction import *
 from langchain_core.runnables import RunnableWithMessageHistory
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain.memory import ConversationSummaryBufferMemory
 from langchain_community.chat_message_histories import RedisChatMessageHistory
+from app.service.chat.getAllChat import get_full_conversation_postgre
 import redis
+
+
 
 load_dotenv()
 
