@@ -155,39 +155,9 @@ async def agent_response(user_input: str, chat_id: str) -> str:
 
     memory.chat_memory.add_user_message(user_input)
     memory.chat_memory.add_ai_message(reply_text)
-
-    # Incrément du compteur et résumé auto tous les 30 messages
-    counter = get_and_increment_counter(chat_id)
-    if counter >= 15:
-        redis_client.delete(f"msg_counter:{chat_id}")
-        generate_summary_from_memory(memory, chat_id)
-
-    return reply_text
-
-async def agent_response(user_input: str, chat_id: str) -> str:
-    prompt_template = load_prompt_template()
-    today = datetime.now().strftime("%d %B %Y")
-    memory = get_memory(chat_id)
-    short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in memory.buffer])
-    long_term_memory = load_summary_from_pinecone(chat_id)
     
-
-    base_cci_context_docs = retriever.invoke(user_input)
-    base_cci_context = "\n\n".join(doc.page_content for doc in base_cci_context_docs) if base_cci_context_docs else "[Pas d'information pertinente dans la base.]"
-    
-
-    prompt = prompt_template.replace("{{today}}", today)\
-                            .replace("{{user_input}}", user_input)\
-                            .replace("{{short_term_memory}}", short_term_memory or "[Aucune mémoire courte]")\
-                            .replace("{{long_term_memory}}", long_term_memory or "[Aucune mémoire longue]")\
-                            .replace("{{cci_context}}", base_cci_context)
-    
-
-    reply = await llm.ainvoke(prompt)
-    reply_text = reply.content if hasattr(reply, "content") else str(reply)
-
-    memory.chat_memory.add_user_message(user_input)
-    memory.chat_memory.add_ai_message(reply_text)
+    print(f"[DEBUG] Memory written to Redis for chat_id: {chat_id}")
+    print(f"[DEBUG] Buffer now contains: {[msg.content for msg in memory.buffer]}")
 
     # Incrément du compteur et résumé auto tous les 30 messages
     counter = get_and_increment_counter(chat_id)
