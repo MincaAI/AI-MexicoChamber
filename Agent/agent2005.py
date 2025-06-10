@@ -155,11 +155,7 @@ async def agent_response(user_input: str, chat_id: str) -> str:
 
     memory.chat_memory.add_user_message(user_input)
     memory.chat_memory.add_ai_message(reply_text)
-    
-    print(f"[DEBUG] Memory written to Redis for chat_id: {chat_id}")
-    print(f"[DEBUG] Buffer now contains: {[msg.content for msg in memory.buffer]}")
 
-    # Incrément du compteur et résumé auto tous les 30 messages
     counter = get_and_increment_counter(chat_id)
     if counter >= 15:
         redis_client.delete(f"msg_counter:{chat_id}")
