@@ -56,9 +56,9 @@ index = pc.Index(PINECONE_INDEX)
 
 llm = ChatOpenAI(
     temperature=0.2,
-    model="gpt-4o-mini",
+    model="gpt-4o",
     streaming=True,
-    max_tokens=300,
+    max_tokens=250,
     callbacks=[StreamPrintCallback()]
 )
 
