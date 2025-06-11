@@ -101,40 +101,37 @@ def load_prompt_template():
 prompt_template = load_prompt_template()
 async def agent_response(user_input: str, chat_id: str) -> str:
     today = datetime.now().strftime("%d %B %Y")
-    memory = get_memory(chat_id)
-    messages = memory.chat_memory.messages
-    short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in messages[-10:]])
-    
-    # Récupération du contexte
-    base_cci_context_docs = retriever.invoke(user_input)
-    base_cci_context = "\n\n".join(doc.page_content for doc in base_cci_context_docs) if base_cci_context_docs else "[Pas d'information pertinente dans la base.]"
-    
-    prompt = prompt_template.replace("{{today}}", today)\
-                            .replace("{{user_input}}", user_input)\
-                            .replace("{{short_term_memory}}", short_term_memory or "[Aucune mémoire courte]")\
-                            .replace("{{cci_context}}", base_cci_context)
+
     try:
-        # Timeout de 9 secondes pour la réponse de l'agent
-        reply = await asyncio.wait_for(llm.ainvoke(prompt), timeout=10.0)
+        memory = get_memory(chat_id)
+        messages = memory.chat_memory.messages[-7:]  # Réduit à 5 messages max
+        short_term_memory = "\n".join(f"{msg.type.capitalize()} : {msg.content}" for msg in messages)
+
+        # 🔁 Passage à un seul doc (plus rapide + réduit la taille du prompt)
+        base_cci_context_docs = retriever.invoke(user_input)
+        base_cci_context = base_cci_context_docs[0].page_content if base_cci_context_docs else "[Pas d'information pertinente]"
+
+        prompt = prompt_template\
+            .replace("{{today}}", today)\
+            .replace("{{user_input}}", user_input)\
+            .replace("{{short_term_memory}}", short_term_memory or "[Aucune mémoire courte]")\
+            .replace("{{cci_context}}", base_cci_context)
+
+        # LLM timeout court (7s)
+        reply = await asyncio.wait_for(llm.ainvoke(prompt), timeout=7.0)
         reply_text = reply.content if hasattr(reply, "content") else str(reply)
-        
-        # Ajout asynchrone des messages à la mémoire
-        await asyncio.gather(
-            asyncio.get_event_loop().run_in_executor(
-                None, 
-                lambda: memory.chat_memory.add_message(HumanMessage(content=user_input))
-            ),
-            asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: memory.chat_memory.add_message(AIMessage(content=reply_text))
-            )
-        )
-        
+
+        # ✅ Ajout mémoire async (non-bloquant, pas besoin de thread)
+        await memory.chat_memory.add_message(HumanMessage(content=user_input))
+        await memory.chat_memory.add_message(AIMessage(content=reply_text))
+
         return reply_text
-        
+
     except asyncio.TimeoutError:
-        return "Désolé, pouvez-vous reformuler votre demande ?"
-    
+        return "Désolé, je n’ai pas pu répondre à temps. Pouvez-vous reformuler ?"
+    except Exception as e:
+        return f"Erreur : {str(e)}"
+
 
 
 
