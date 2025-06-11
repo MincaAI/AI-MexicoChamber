@@ -58,7 +58,7 @@ llm = ChatOpenAI(
     temperature=0.2,
     model="gpt-4o-mini",
     streaming=True,
-    max_tokens=3000,
+    max_tokens=300,
     callbacks=[StreamPrintCallback()]
 )
 
@@ -94,8 +94,6 @@ def get_memory(chat_id: str) -> ConversationSummaryBufferMemory:
 def load_prompt_template():
     with open("prompt_base.txt", encoding="utf-8") as f:
         return f.read().strip()
-    
-
 
 
 prompt_template = load_prompt_template()
@@ -103,7 +101,7 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     today = datetime.now().strftime("%d %B %Y")
     memory = get_memory(chat_id)
     
-    await asyncio.to_thread(memory.chat_memory.add_message, HumanMessage(content=user_input))
+    memory.chat_memory.add_message(HumanMessage(content=user_input))
     messages = memory.chat_memory.messages
     short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in messages[-30:]])
     
