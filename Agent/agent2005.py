@@ -104,7 +104,7 @@ async def agent_response(user_input: str, chat_id: str) -> str:
 
     try:
         memory = get_memory(chat_id)
-        messages = memory.chat_memory.messages[-7:]  # Réduit à 5 messages max
+        messages = memory.chat_memory.messages[-7:]  # Réduit à 7 messages max
         short_term_memory = "\n".join(f"{msg.type.capitalize()} : {msg.content}" for msg in messages)
 
         # 🔁 Passage à un seul doc (plus rapide + réduit la taille du prompt)
@@ -121,17 +121,24 @@ async def agent_response(user_input: str, chat_id: str) -> str:
         reply = await asyncio.wait_for(llm.ainvoke(prompt), timeout=7.0)
         reply_text = reply.content if hasattr(reply, "content") else str(reply)
 
-        # ✅ Ajout mémoire async (non-bloquant, pas besoin de thread)
-        await memory.chat_memory.add_message(HumanMessage(content=user_input))
-        await memory.chat_memory.add_message(AIMessage(content=reply_text))
+        # Stockage asynchrone des messages
+        asyncio.create_task(store_messages_async(memory, user_input, reply_text))
 
         return reply_text
 
     except asyncio.TimeoutError:
-        return "Désolé, je n’ai pas pu répondre à temps. Pouvez-vous reformuler ?"
+        return "Je n'ai pas pu répondre à temps. Pouvez-vous reformuler ou poser une question plus simple ?"
     except Exception as e:
         return f"Erreur : {str(e)}"
 
+
+async def store_messages_async(memory, user_input, reply_text):
+    """Stockage asynchrone des messages"""
+    try:
+        await asyncio.to_thread(memory.chat_memory.add_message, HumanMessage(content=user_input[:400]))
+        await asyncio.to_thread(memory.chat_memory.add_message, AIMessage(content=reply_text[:400]))
+    except Exception as e:
+        print(f"[store_messages_async] Erreur lors du stockage des messages : {e}")
 
 
 
