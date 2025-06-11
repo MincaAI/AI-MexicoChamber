@@ -106,9 +106,9 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in messages[-30:]])
     
     # Affichage de la mémoire courte
-    print("\n📝 Short-term memory qui sera utilisée:")
-    print(short_term_memory or "[Aucune mémoire]")
-    print("="*50)
+    #print("\n📝 Short-term memory qui sera utilisée:")
+    #print(short_term_memory or "[Aucune mémoire]")
+    #print("="*50)
 
     # Récupération du contexte
     base_cci_context_docs = retriever.invoke(user_input)
