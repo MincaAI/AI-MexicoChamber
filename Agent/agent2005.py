@@ -23,7 +23,6 @@ from app.service.chat.getAllChat import get_full_conversation_postgre
 import redis
 
 
-
 load_dotenv()
 
 redis_url = os.getenv("REDIS_URL")
@@ -56,10 +55,10 @@ index = pc.Index(PINECONE_INDEX)
 #)
 
 llm = ChatOpenAI(
-    temperature=0.5,
-    model="gpt-4o",
+    temperature=0.2,
+    model="gpt-4o-mini",
     streaming=True,
-    max_tokens=400,
+    max_tokens=300,
     callbacks=[StreamPrintCallback()]
 )
 
@@ -87,7 +86,7 @@ def get_memory(chat_id: str) -> ConversationSummaryBufferMemory:
         memory_key="chat_history",
         chat_memory=history,
         return_messages=True,
-        max_token_limit=600
+        max_token_limit=500
     )
     return memory
 
@@ -116,7 +115,7 @@ async def agent_response(user_input: str, chat_id: str) -> str:
                             .replace("{{cci_context}}", base_cci_context)
     try:
         # Timeout de 9 secondes pour la réponse de l'agent
-        reply = await asyncio.wait_for(llm.ainvoke(prompt), timeout=9.0)
+        reply = await asyncio.wait_for(llm.ainvoke(prompt), timeout=10.0)
         reply_text = reply.content if hasattr(reply, "content") else str(reply)
         
         # Ajout asynchrone des messages à la mémoire
