@@ -58,7 +58,7 @@ llm = ChatOpenAI(
     temperature=0.2,
     model="gpt-4o-mini",
     streaming=True,
-    max_tokens=300,
+    max_tokens=3000,
     callbacks=[StreamPrintCallback()]
 )
 
@@ -70,7 +70,7 @@ retriever = PineconeVectorStore(
     embedding=embeddings
 ).as_retriever(search_kwargs={"k": 2})
 #new
-summary_store = PineconeVectorStore(index=index, embedding=embeddings,namespace="summaries")  # new
+#summary_store = PineconeVectorStore(index=index, embedding=embeddings,namespace="summaries")  # new
 
 
 def get_memory(chat_id: str) -> ConversationSummaryBufferMemory:
@@ -86,7 +86,7 @@ def get_memory(chat_id: str) -> ConversationSummaryBufferMemory:
         memory_key="chat_history",
         chat_memory=history,
         return_messages=True,
-        max_token_limit=500
+        max_token_limit=3000
     )
     return memory
 
@@ -102,9 +102,16 @@ prompt_template = load_prompt_template()
 async def agent_response(user_input: str, chat_id: str) -> str:
     today = datetime.now().strftime("%d %B %Y")
     memory = get_memory(chat_id)
-    messages = memory.chat_memory.messages
-    short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in messages[-10:]])
     
+    await asyncio.to_thread(memory.chat_memory.add_message, HumanMessage(content=user_input))
+    messages = memory.chat_memory.messages
+    short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in messages[-30:]])
+    
+    # Affichage de la mémoire courte
+    print("\n📝 Short-term memory qui sera utilisée:")
+    print(short_term_memory or "[Aucune mémoire]")
+    print("="*50)
+
     # Récupération du contexte
     base_cci_context_docs = retriever.invoke(user_input)
     base_cci_context = "\n\n".join(doc.page_content for doc in base_cci_context_docs) if base_cci_context_docs else "[Pas d'information pertinente dans la base.]"
@@ -117,23 +124,16 @@ async def agent_response(user_input: str, chat_id: str) -> str:
         # Timeout de 9 secondes pour la réponse de l'agent
         reply = await asyncio.wait_for(llm.ainvoke(prompt), timeout=9.0)
         reply_text = reply.content if hasattr(reply, "content") else str(reply)
-        
-        # Ajout asynchrone des messages à la mémoire
-        await asyncio.gather(
-            asyncio.get_event_loop().run_in_executor(
-                None, 
-                lambda: memory.chat_memory.add_message(HumanMessage(content=user_input))
-            ),
-            asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: memory.chat_memory.add_message(AIMessage(content=reply_text))
-            )
-        )
-        
+
+        # ⬅️ Ajout **synchronisé** du message AI (ordre garanti)
+        memory.chat_memory.add_message(AIMessage(content=reply_text))
+
         return reply_text
-        
+
     except asyncio.TimeoutError:
-        return "Désolé, pouvez-vous reformuler votre demande ?"
+        return "Je n'ai pas pu répondre à temps. Pouvez-vous reformuler ou poser une question plus simple ?"
+    except Exception as e:
+        return f"Erreur interne : {str(e)}"
 
 
     
