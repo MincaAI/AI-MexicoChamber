@@ -96,6 +96,33 @@ def load_prompt_template():
         return f.read().strip()
 
 
+def get_user_profile_summary(chat_id: str, messages: list) -> str:
+    redis_key = f"profile_summary:{chat_id}"
+    if redis_client.exists(redis_key):
+        return redis_client.get(redis_key).decode("utf-8")
+
+    if len(messages) < 20:
+        return ""
+
+    full_chat = "\n".join([f"{msg.type.upper()} : {msg.content}" for msg in messages])
+    prompt_resume = (
+        "Voici une conversation WhatsApp. Résume-la en 4 phrases claires :\n"
+        "1. Qui est la personne ? (Nom si connu)\n"
+        "2. Que fait-elle dans la vie ?\n"
+        "3. Quels sont ses besoins ou objectifs ?\n"
+        "4. Un fait important à retenir pour la suite ? (budget, localisation, urgence...)\n\n"
+        "Conserve un ton neutre, concis et professionnel. N’invente rien.\n\n"
+        f"Conversation :\n{full_chat}"
+    )
+
+    try:
+        summary = asyncio.run(llm.ainvoke(prompt_resume)).content
+        redis_client.set(redis_key, summary, ex=60 * 60 * 24 * 30)  # expire dans 30 jours
+        return summary
+    except Exception as e:
+        print("Erreur génération résumé utilisateur :", e)
+        return ""
+
 prompt_template = load_prompt_template()
 async def agent_response(user_input: str, chat_id: str) -> str:
     today = datetime.now().strftime("%d %B %Y")
@@ -104,6 +131,7 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     memory.chat_memory.add_message(HumanMessage(content=user_input))
     messages = memory.chat_memory.messages
     short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in messages[-30:]])
+     user_profile_summary = get_user_profile_summary(chat_id, messages)
     
     # Affichage de la mémoire courte
     #print("\n📝 Short-term memory qui sera utilisée:")
@@ -117,6 +145,7 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     prompt = prompt_template.replace("{{today}}", today)\
                             .replace("{{user_input}}", user_input)\
                             .replace("{{short_term_memory}}", short_term_memory or "[Aucune mémoire courte]")\
+                            .replace("{{user_profile}}", user_profile_summary or "[Profil encore inconnu]")\
                             .replace("{{cci_context}}", base_cci_context)
     try:
         # Timeout de 9 secondes pour la réponse de l'agent
