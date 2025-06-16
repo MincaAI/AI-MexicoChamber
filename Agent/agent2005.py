@@ -58,7 +58,7 @@ llm = ChatOpenAI(
     temperature=0.2,
     model="gpt-4o",
     streaming=True,
-    max_tokens=250,
+    max_tokens=350,
     callbacks=[StreamPrintCallback()]
 )
 
@@ -86,7 +86,7 @@ def get_memory(chat_id: str) -> ConversationSummaryBufferMemory:
         memory_key="chat_history",
         chat_memory=history,
         return_messages=True,
-        max_token_limit=3000
+        max_token_limit=2000
     )
     return memory
 
@@ -96,34 +96,36 @@ def load_prompt_template():
         return f.read().strip()
 
 
-def get_user_profile_summary(chat_id: str, messages: list) -> str:
+async def get_user_profile_summary(chat_id: str, messages: list) -> str:
     redis_key = f"profile_summary:{chat_id}"
     if redis_client.exists(redis_key):
         return redis_client.get(redis_key).decode("utf-8")
 
-    if len(messages) < 20:
+    if len(messages) < 11:
         return ""
 
     full_chat = "\n".join([f"{msg.type.upper()} : {msg.content}" for msg in messages])
     prompt_resume = (
-        "Voici une conversation WhatsApp. Résume-la en 4 phrases claires :\n"
-        "1. Qui est la personne ? (Nom si connu)\n"
+        "Voici une conversation WhatsApp. Résume-la en 5 phrases claires :\n"
+        "1. Qui est la personne, son entreprise ? (Nom si connu)\n"
         "2. Que fait-elle dans la vie ?\n"
         "3. Quels sont ses besoins ou objectifs ?\n"
-        "4. Un fait important à retenir pour la suite ? (budget, localisation, urgence...)\n\n"
-        "Conserve un ton neutre, concis et professionnel. N’invente rien.\n\n"
+        "4. Quoi l'intéresse avec la CCI ?\n"
+        "5. Un fait important à retenir pour la suite ? (budget, localisation, urgence...)\n\n"
         f"Conversation :\n{full_chat}"
     )
 
     try:
-        summary = asyncio.run(llm.ainvoke(prompt_resume)).content
-        redis_client.set(redis_key, summary, ex=60 * 60 * 24 * 30)  # expire dans 30 jours
-        return summary
+        summary = await llm.ainvoke(prompt_resume)
+        summary_text = summary.content if hasattr(summary, "content") else str(summary)
+        redis_client.set(redis_key, summary_text, ex=60 * 60 * 24 * 60)  # expire dans 30 jours
+        return summary_text
     except Exception as e:
         print("Erreur génération résumé utilisateur :", e)
         return ""
 
 prompt_template = load_prompt_template()
+
 async def agent_response(user_input: str, chat_id: str) -> str:
     today = datetime.now().strftime("%d %B %Y")
     memory = get_memory(chat_id)
@@ -131,12 +133,16 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     memory.chat_memory.add_message(HumanMessage(content=user_input))
     messages = memory.chat_memory.messages
     short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in messages[-30:]])
-     user_profile_summary = get_user_profile_summary(chat_id, messages)
+    user_profile_summary = await get_user_profile_summary(chat_id, messages)
     
     # Affichage de la mémoire courte
     #print("\n📝 Short-term memory qui sera utilisée:")
     #print(short_term_memory or "[Aucune mémoire]")
     #print("="*50)
+    #print("\n📝 long-term qui sera utilisée:")
+    #print(user_profile_summary or "[Aucune mémoire]")
+    #print("="*50)
+
 
     # Récupération du contexte
     base_cci_context_docs = retriever.invoke(user_input)
@@ -147,6 +153,12 @@ async def agent_response(user_input: str, chat_id: str) -> str:
                             .replace("{{short_term_memory}}", short_term_memory or "[Aucune mémoire courte]")\
                             .replace("{{user_profile}}", user_profile_summary or "[Profil encore inconnu]")\
                             .replace("{{cci_context}}", base_cci_context)
+    
+    # Affichage du prompt
+    #print("\n📝 Prompt qui sera utilisé:")
+    #print(prompt)
+    #print("="*50)
+    
     try:
         # Timeout de 9 secondes pour la réponse de l'agent
         reply = await asyncio.wait_for(llm.ainvoke(prompt), timeout=9.0)
