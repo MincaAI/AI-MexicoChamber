@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 from Agent.agent2005 import *
 from typing import Optional
+from app.service.chat.storeMessageWithChatId import store_message_and_reply
 import traceback
 
 app = FastAPI()
@@ -19,8 +20,15 @@ async def root():
 @app.post("/chat")
 async def chat(req: ChatRequest):
     try:
+        # 1. Get agent response
         response = await agent_response(req.message, chat_id=req.chat_id)
+
+        # 2. Store both user message and agent reply
+        await store_message_and_reply(chat_id=req.chat_id, message=req.message, reply=response)
+
+        # 3. Return response
         return JSONResponse(content={"reply": response})
+
     except Exception as e:
         tb = traceback.format_exc()
         return JSONResponse(
