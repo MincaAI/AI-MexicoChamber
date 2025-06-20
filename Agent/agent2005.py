@@ -181,10 +181,11 @@ async def surveillance_inactivite(chat_id: str):
         result = await get_full_conversation_postgre(chat_id)
         history = result.get("history", "")
         chatType = result.get("type", "undefined")
+        value = result.get("value", "")
 
         if has_calendly_link(history):
             lead = extract_lead_info(history)
-            store_lead_to_google_sheet(lead, type=chatType)
+            store_lead_to_google_sheet(lead, type=chatType, chat_id=chat_id, numberWhatsapp=value)
 
         return {"status": "success"}
 

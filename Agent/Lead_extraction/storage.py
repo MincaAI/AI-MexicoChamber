@@ -5,7 +5,7 @@ from datetime import datetime
 import os
 import pytz
 
-def store_lead_to_google_sheet(lead_data: dict, type: str = 'undefined'):
+def store_lead_to_google_sheet(lead_data: dict, type: str = 'undefined', numberWhatsapp: str ='',chat_id :str =''):
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     # Utiliser le chemin relatif à la racine du projet
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -30,5 +30,7 @@ def store_lead_to_google_sheet(lead_data: dict, type: str = 'undefined'):
         lead_data.get("interet", "inconnu"),
         lead_data.get("score", 1),
         date_now,        
-        type
+        type,
+        numberWhatsapp,
+        chat_id
     ])

@@ -4,13 +4,14 @@ import sqlalchemy as sa
 
 async def get_full_conversation_postgre(chat_id: str):
     async with AsyncSessionLocal() as session:
-        # 1. Get chat type
+        # 1. Get chat type and value
         chat_type_result = await session.execute(
-            sa.text("SELECT type FROM public.chat WHERE chatid = :chatid"),
+            sa.text("SELECT type, value FROM public.chat WHERE chatid = :chatid"),
             {"chatid": chat_id}
         )
         chat_type_row = chat_type_result.fetchone()
         chat_type = chat_type_row.type if chat_type_row else "inconnu"
+        chat_value = chat_type_row.value if chat_type_row else "inconnu"
 
         # 2. Get message history
         query = """
@@ -25,6 +26,7 @@ async def get_full_conversation_postgre(chat_id: str):
         if not messages:
             return {
                 "type": chat_type,
+                "value": chat_value,
                 "history": "[Aucune conversation précédente]"
             }
         
@@ -37,7 +39,9 @@ async def get_full_conversation_postgre(chat_id: str):
         
         return {
             "type": chat_type,
-            "history": "\n".join(history)
+            "value": chat_value,
+            "history": "\n".join(history),
         }
+
 
 
