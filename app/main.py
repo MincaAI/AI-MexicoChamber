@@ -5,6 +5,7 @@ from Agent.agent2005 import *
 from typing import Optional
 from app.service.chat.storeMessageWithChatId import store_message_and_reply
 import traceback
+import httpx
 
 app = FastAPI()
 
@@ -20,14 +21,32 @@ async def root():
 @app.post("/chat")
 async def chat(req: ChatRequest):
     try:
-        # 1. Get agent response
-        response = await agent_response(req.message, chat_id=req.chat_id)
+        # 1. Get chatId from phone number via middle API
+        async with httpx.AsyncClient() as client:
+            chatid_response = await client.post(
+                "https://api.mincaai-franciamexico.com/chat/getChatIdFromPhone",
+                json={"phoneNumber": req.chat_id}  # assuming req.chat_id is a phone number
+            )
+            chatid_response.raise_for_status()
+            chatid = chatid_response.json().get("chatId")
 
-        # 2. Store both user message and agent reply
-        await store_message_and_reply(chat_id=req.chat_id, message=req.message, reply=response)
+        if not chatid:
+            return JSONResponse(status_code=404, content={"error": "Unable to retrieve chatId from phone number"})
 
-        # 3. Return response
+        # 2. Get agent response using the resolved chatid
+        response = await agent_response(req.message, chat_id=chatid)
+
+        # 3. Store messages in DB
+        await store_message_and_reply(chat_id=chatid, message=req.message, reply=response)
+
+        # 4. Return reply
         return JSONResponse(content={"reply": response})
+
+    except httpx.HTTPStatusError as e:
+        return JSONResponse(
+            status_code=e.response.status_code,
+            content={"error": "Failed to retrieve chatId", "details": e.response.text}
+        )
 
     except Exception as e:
         tb = traceback.format_exc()
