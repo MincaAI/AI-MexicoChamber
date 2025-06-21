@@ -21,6 +21,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langchain_community.chat_message_histories import RedisChatMessageHistory
 from app.service.chat.getAllChat import get_full_conversation_postgre
 import redis
+from app.service.chat.store_calendy_link import *
 
 
 load_dotenv()
@@ -184,6 +185,7 @@ async def surveillance_inactivite(chat_id: str):
         value = result.get("value", "")
 
         if has_calendly_link(history):
+            store_calendy_link(chat_id)
             lead = extract_lead_info(history)
             store_lead_to_google_sheet(lead, type=chatType, chat_id=chat_id, numberWhatsapp=value)
 
