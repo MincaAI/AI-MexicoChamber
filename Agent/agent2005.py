@@ -5,8 +5,7 @@ import threading
 import asyncio
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-from langchain_anthropic import ChatAnthropic
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_pinecone import PineconeVectorStore
 from langchain.schema import Document
 from pinecone import Pinecone
@@ -38,7 +37,6 @@ class StreamPrintCallback(BaseCallbackHandler):
 # === 1. Charger les variables d'environnement ===
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_INDEX = os.getenv("PINECONE_INDEX")
 
@@ -46,22 +44,28 @@ PINECONE_INDEX = os.getenv("PINECONE_INDEX")
 pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index(PINECONE_INDEX)
 
-# Configuration Claude
-#llm = ChatAnthropic(
-  #  temperature=0.6,
-   # model="claude-3-5-sonnet-20241022",
-    #streaming=False,
-    #anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
-    #callbacks=[StreamPrintCallback()]
-#)
-
-llm = ChatOpenAI(
-    temperature=0.2,
-    model="gpt-4o",
-    streaming=True,
-    max_tokens=350,
-    callbacks=[StreamPrintCallback()]
-)
+# Tentative d'utilisation de GPT-4.1 avec fallback vers GPT-4o
+try:
+    print("🔄 Tentative de connexion avec GPT-4.1...")
+    llm = ChatOpenAI(
+        temperature=0.2,
+        model="gpt-4.1",
+        streaming=True,
+        max_tokens=350,
+        callbacks=[StreamPrintCallback()]
+    )
+    # Test rapide pour vérifier que le modèle fonctionne
+    test_response = llm.invoke("test")
+    print("✅ GPT-4.1 connecté avec succès !")
+except Exception as e:
+    print(f"⚠️ GPT-4.1 non disponible ({str(e)[:50]}...), fallback vers GPT-4o")
+    llm = ChatOpenAI(
+        temperature=0.2,
+        model="gpt-4o",
+        streaming=True,
+        max_tokens=350,
+        callbacks=[StreamPrintCallback()]
+    )
 
 # === 3. Pinecone ===
 
@@ -96,6 +100,77 @@ def load_prompt_template():
     with open("prompt_base.txt", encoding="utf-8") as f:
         return f.read().strip()
 
+def load_prompt_template_es():
+    with open("prompt_base_es.txt", encoding="utf-8") as f:
+        return f.read().strip()
+
+# Cache global des prompts (chargés une seule fois par process)
+PROMPT_FR = load_prompt_template()
+PROMPT_ES = load_prompt_template_es()
+
+async def detect_language(text: str) -> str:
+    """
+    Détecte la langue d'un message texte avec GPT-4o-mini.
+    Returns: 'fr' pour français, 'es' pour espagnol
+    """
+    # LLM spécifique pour la détection de langue (plus rapide et moins cher)
+    # Essayer GPT-4.1-mini s'il existe, sinon fallback vers GPT-4o-mini
+    try:
+        language_detector = ChatOpenAI(
+            temperature=0,
+            model="gpt-4.1-mini",
+            max_tokens=10
+        )
+    except:
+        language_detector = ChatOpenAI(
+            temperature=0,
+            model="gpt-4o-mini",
+            max_tokens=10
+        )
+    
+    prompt = f"""Détecte la langue de ce message et réponds uniquement par 'fr' pour français ou 'es' pour espagnol:
+
+Message: "{text}"
+
+Réponse:"""
+    
+    try:
+        result = await language_detector.ainvoke(prompt)
+        detected = (result.content or "").strip().lower()
+        # Normalisation robuste des sorties potentielles
+        if "es" in detected or "espa" in detected:
+            return 'es'
+        if "fr" in detected or "fran" in detected:
+            return 'fr'
+        return 'fr'
+    except Exception as e:
+        print(f"Erreur détection langue: {e}")
+        # Fallback en cas d'erreur
+        return 'fr'
+
+async def get_or_detect_user_language_and_prompt(chat_id: str, user_input: str) -> tuple[str, str]:
+    """
+    Récupère ou détecte la langue de l'utilisateur et retourne (langue, prompt_template).
+    Ne fait la détection qu'une seule fois par utilisateur.
+    """
+    redis_key = f"user_language:{chat_id}"
+    
+    # Vérifier si la langue est déjà stockée
+    stored_language = redis_client.get(redis_key)
+    if stored_language:
+        language = stored_language.decode('utf-8')
+        # Retourner le prompt depuis le cache global
+        return language, (PROMPT_ES if language == 'es' else PROMPT_FR)
+    
+    # Première fois : détecter la langue du premier message
+    detected_language = await detect_language(user_input)
+    
+    # Stocker pour 30 jours
+    redis_client.set(redis_key, detected_language, ex=60 * 60 * 24 * 30)
+    
+    # Retourner le prompt depuis le cache global
+    return detected_language, (PROMPT_ES if detected_language == 'es' else PROMPT_FR)
+
 
 async def get_user_profile_summary(chat_id: str, messages: list) -> str:
     redis_key = f"profile_summary:{chat_id}"
@@ -125,8 +200,6 @@ async def get_user_profile_summary(chat_id: str, messages: list) -> str:
         print("Erreur génération résumé utilisateur :", e)
         return ""
 
-prompt_template = load_prompt_template()
-
 async def agent_response(user_input: str, chat_id: str) -> str:
     today = datetime.now().strftime("%d %B %Y")
     memory = get_memory(chat_id)
@@ -136,7 +209,11 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in messages[-30:]])
     user_profile_summary = await get_user_profile_summary(chat_id, messages)
     
-    # Affichage de la mémoire courte
+    # Récupération/détection de la langue ET du prompt (une seule fois par utilisateur)
+    user_language, prompt_template = await get_or_detect_user_language_and_prompt(chat_id, user_input)
+    
+    # Affichage de la mémoire courte (debug)
+    #print(f"\n📝 Langue détectée/stockée: {user_language}")
     #print("\n📝 Short-term memory qui sera utilisée:")
     #print(short_term_memory or "[Aucune mémoire]")
     #print("="*50)
@@ -144,15 +221,18 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     #print(user_profile_summary or "[Aucune mémoire]")
     #print("="*50)
 
-
     # Récupération du contexte
     base_cci_context_docs = retriever.invoke(user_input)
     base_cci_context = "\n\n".join(doc.page_content for doc in base_cci_context_docs) if base_cci_context_docs else "[Pas d'information pertinente dans la base.]"
     
+    # Messages par défaut selon la langue
+    default_memory = "[Ninguna memoria corta]" if user_language == 'es' else "[Aucune mémoire courte]"
+    default_profile = "[Perfil aún desconocido]" if user_language == 'es' else "[Profil encore inconnu]"
+    
     prompt = prompt_template.replace("{{today}}", today)\
                             .replace("{{user_input}}", user_input)\
-                            .replace("{{short_term_memory}}", short_term_memory or "[Aucune mémoire courte]")\
-                            .replace("{{user_profile}}", user_profile_summary or "[Profil encore inconnu]")\
+                            .replace("{{short_term_memory}}", short_term_memory or default_memory)\
+                            .replace("{{user_profile}}", user_profile_summary or default_profile)\
                             .replace("{{cci_context}}", base_cci_context)
     
     # Affichage du prompt
@@ -193,18 +273,20 @@ async def surveillance_inactivite(chat_id: str):
 
     except Exception as e:
         return {"status": "error", "message": str(e)}
-# if __name__ == "__main__":
-#     import uuid
-#     chat_id = str(uuid.uuid4())  # 👈 Generate a unique ID per session
-#     print(f"🆔 Session Chat ID: {chat_id}")
-#     threading.Thread(target=surveillance_inactivite, args=(chat_id,), daemon=True).start()
-
-#     try:
-#         while True:
-#             user_input = input("💬 Vous : ")
-#             inactivity_event.set()
-#             reply = asyncio.run(agent_response(user_input, chat_id=chat_id))
-#             print(f"\n🧠 Agent :\n{reply}\n")
-#     except KeyboardInterrupt:
-#         pass
+if __name__ == "__main__":
+    import uuid
+    chat_id = str(uuid.uuid4())  # 👈 Generate a unique ID per session
+    print(f"🆔 Session Chat ID: {chat_id}")
+    print("💬 Tapez vos messages (français ou espagnol). Ctrl+C pour quitter.\n")
+    
+    try:
+        while True:
+            user_input = input("💬 Vous : ")
+            if user_input.lower() in ['quit', 'exit', 'bye']:
+                break
+            reply = asyncio.run(agent_response(user_input, chat_id=chat_id))
+            print(f"\n🧠 Agent :\n{reply}\n")
+    except KeyboardInterrupt:
+        print("\n👋 Au revoir !")
+        pass
 
