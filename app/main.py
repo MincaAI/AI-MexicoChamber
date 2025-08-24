@@ -1,11 +1,19 @@
+import os
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
-from Agent.agent2005 import *
 from typing import Optional
-from app.service.chat.storeMessageWithChatId import store_message_and_reply
 import traceback
 import httpx
+
+# Import agent seulement si les variables d'environnement sont définies
+try:
+    from Agent.agent2005 import *
+    from app.service.chat.storeMessageWithChatId import store_message_and_reply
+    AGENT_AVAILABLE = True
+except Exception as e:
+    print(f"Warning: Agent not available: {e}")
+    AGENT_AVAILABLE = False
 
 app = FastAPI()
 
@@ -16,7 +24,12 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 async def root():
-    return {"message": "🤖 Agent CCI (événements + base vectorielle + mémoire longue) — prêt !"}
+    return {
+        "message": "🤖 Agent CCI (événements + base vectorielle + mémoire longue) — prêt !",
+        "status": "healthy",
+        "agent_available": AGENT_AVAILABLE,
+        "timestamp": "2025-01-22"
+    }
 
 @app.get("/health")
 async def health_check():
@@ -30,6 +43,12 @@ async def health_check():
 
 @app.post("/chat")
 async def chat(req: ChatRequest):
+    if not AGENT_AVAILABLE:
+        return JSONResponse(
+            status_code=503, 
+            content={"error": "Agent service temporarily unavailable. Please check environment variables."}
+        )
+    
     try:
         # 1. Get chatId from phone number via middle API
         async with httpx.AsyncClient() as client:
@@ -70,6 +89,12 @@ async def chat(req: ChatRequest):
     
 @app.post("/surveillance_inactivite")
 async def surveillance(req: ChatRequest):
+    if not AGENT_AVAILABLE:
+        return JSONResponse(
+            status_code=503, 
+            content={"error": "Agent service temporarily unavailable. Please check environment variables."}
+        )
+    
     try:
         response = await surveillance_inactivite(req.chat_id)
         return JSONResponse(content=response)
