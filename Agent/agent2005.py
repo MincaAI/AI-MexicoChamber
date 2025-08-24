@@ -22,8 +22,11 @@ from app.service.chat.getAllChat import get_full_conversation_postgre
 import redis
 from app.service.chat.store_calendy_link import *
 
-# Chargement unique des variables d'environnement
-load_dotenv()
+# Chargement unique des variables d'environnement (seulement si fichier .env existe)
+try:
+    load_dotenv()
+except:
+    pass  # Pas de fichier .env en production AWS App Runner
 
 # Initialisation sécurisée de Redis
 redis_url = os.getenv("REDIS_URL")

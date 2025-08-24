@@ -7,6 +7,7 @@ import traceback
 import httpx
 
 # Import agent seulement si les variables d'environnement sont définies
+AGENT_ERROR = None
 try:
     from Agent.agent2005 import *
     from app.service.chat.storeMessageWithChatId import store_message_and_reply
@@ -14,6 +15,7 @@ try:
 except Exception as e:
     print(f"Warning: Agent not available: {e}")
     AGENT_AVAILABLE = False
+    AGENT_ERROR = str(e)
 
 app = FastAPI()
 
@@ -24,12 +26,15 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 async def root():
-    return {
+    response = {
         "message": "🤖 Agent CCI (événements + base vectorielle + mémoire longue) — prêt !",
         "status": "healthy",
         "agent_available": AGENT_AVAILABLE,
         "timestamp": "2025-01-22"
     }
+    if AGENT_ERROR:
+        response["agent_error"] = AGENT_ERROR
+    return response
 
 @app.get("/health")
 async def health_check():
