@@ -37,16 +37,17 @@ try:
         redis_client = redis.Redis.from_url(redis_url)
         # Test de connexion
         redis_client.ping()
-        print("✅ Redis connecté avec succès")
+        # Redis connecté avec succès (print supprimé pour WhatsApp latence)
 except Exception as e:
     print(f"⚠️ Redis non disponible: {e}")
     redis_client = None
 
 inactivity_event = threading.Event()
 
-class StreamPrintCallback(BaseCallbackHandler):
-    def on_llm_new_token(self, token: str, **kwargs):
-        print(token, end="", flush=True)
+# StreamPrintCallback supprimé pour optimiser la latence WhatsApp
+# class StreamPrintCallback(BaseCallbackHandler):
+#     def on_llm_new_token(self, token: str, **kwargs):
+#         print(token, end="", flush=True)
 
 def get_redis_client():
     """Retourne un client Redis basé sur REDIS_URL, ou None en cas d'erreur."""
@@ -61,7 +62,7 @@ def get_redis_client():
     try:
         return redis.Redis.from_url(url)
     except Exception as e:
-        print("Erreur connexion Redis:", e)
+        # Erreur connexion Redis (print supprimé pour WhatsApp latence)
         return None
 
 # === 1. Variables d'environnement (déjà chargées) ===
@@ -75,23 +76,21 @@ index = pc.Index(PINECONE_INDEX)
 
 # Tentative d'utilisation de GPT-4.1 avec fallback vers GPT-4o (optimisé pour AWS)
 try:
-    print("🔄 Initialisation GPT-4.1...")
+    # Initialisation GPT-4.1 (prints supprimés pour WhatsApp latence)
     llm = ChatOpenAI(
         temperature=0.2,
         model="gpt-4.1",
-        streaming=True,
-        max_tokens=350,
-        callbacks=[StreamPrintCallback()]
+        streaming=False,  # Désactivé pour WhatsApp latence
+        max_tokens=350
     )
-    print("✅ GPT-4.1 initialisé (test de connexion différé)")
+    # GPT-4.1 initialisé (test de connexion différé)
 except Exception as e:
     print(f"⚠️ GPT-4.1 non disponible ({str(e)[:50]}...), fallback vers GPT-4o")
     llm = ChatOpenAI(
         temperature=0.2,
         model="gpt-4o",
-        streaming=True,
-        max_tokens=350,
-        callbacks=[StreamPrintCallback()]
+        streaming=False,  # Désactivé pour WhatsApp latence
+        max_tokens=350
     )
 
 # === 3. Pinecone ===
@@ -186,7 +185,7 @@ Réponse:"""
             return 'fr'
         return 'fr'
     except Exception as e:
-        print(f"Erreur détection langue: {e}")
+        # Erreur détection langue (print supprimé pour WhatsApp latence)
         # Fallback en cas d'erreur
         return 'fr'
 
@@ -244,7 +243,7 @@ async def get_user_profile_summary(chat_id: str, messages: list) -> str:
         redis_client.set(redis_key, summary_text, ex=60 * 60 * 24 * 60)  # expire dans 30 jours
         return summary_text
     except Exception as e:
-        print("Erreur génération résumé utilisateur :", e)
+        # Erreur génération résumé utilisateur (print supprimé pour WhatsApp latence)
         return ""
 
 async def agent_response(user_input: str, chat_id: str) -> str:
@@ -256,8 +255,20 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in messages[-30:]])
     user_profile_summary = await get_user_profile_summary(chat_id, messages)
     
-    # Récupération/détection de la langue ET du prompt (une seule fois par utilisateur)
-    user_language, prompt_template = await get_or_detect_user_language_and_prompt(chat_id, user_input)
+    # Optimisation : récupération directe langue depuis Redis si déjà stockée
+    redis_lang_key = f"user_language:{chat_id}"
+    cached_language = redis_client.get(redis_lang_key) if redis_client else None
+    
+    if cached_language:
+        # Langue déjà en cache - récupération directe du prompt
+        user_language = cached_language.decode('utf-8')
+        if user_language == 'es':
+            prompt_template = load_prompt_template_es()
+        else:
+            prompt_template = load_prompt_template()
+    else:
+        # Première fois - détection et stockage
+        user_language, prompt_template = await get_or_detect_user_language_and_prompt(chat_id, user_input)
     
     # Affichage de la mémoire courte (debug)
     #print(f"\n📝 Langue détectée/stockée: {user_language}")
