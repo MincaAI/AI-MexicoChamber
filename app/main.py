@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
