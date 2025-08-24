@@ -22,11 +22,21 @@ from app.service.chat.getAllChat import get_full_conversation_postgre
 import redis
 from app.service.chat.store_calendy_link import *
 
-
+# Chargement unique des variables d'environnement
 load_dotenv()
 
+# Initialisation sécurisée de Redis
 redis_url = os.getenv("REDIS_URL")
-redis_client = redis.Redis.from_url(redis_url)
+redis_client = None
+try:
+    if redis_url:
+        redis_client = redis.Redis.from_url(redis_url)
+        # Test de connexion
+        redis_client.ping()
+        print("✅ Redis connecté avec succès")
+except Exception as e:
+    print(f"⚠️ Redis non disponible: {e}")
+    redis_client = None
 
 inactivity_event = threading.Event()
 
@@ -34,8 +44,23 @@ class StreamPrintCallback(BaseCallbackHandler):
     def on_llm_new_token(self, token: str, **kwargs):
         print(token, end="", flush=True)
 
-# === 1. Charger les variables d'environnement ===
-load_dotenv()
+def get_redis_client():
+    """Retourne un client Redis basé sur REDIS_URL, ou None en cas d'erreur."""
+    try:
+        if redis_client:
+            return redis_client
+    except Exception:
+        pass
+    url = os.getenv("REDIS_URL")
+    if not url:
+        return None
+    try:
+        return redis.Redis.from_url(url)
+    except Exception as e:
+        print("Erreur connexion Redis:", e)
+        return None
+
+# === 1. Variables d'environnement (déjà chargées) ===
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 PINECONE_INDEX = os.getenv("PINECONE_INDEX")
@@ -44,9 +69,9 @@ PINECONE_INDEX = os.getenv("PINECONE_INDEX")
 pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index(PINECONE_INDEX)
 
-# Tentative d'utilisation de GPT-4.1 avec fallback vers GPT-4o
+# Tentative d'utilisation de GPT-4.1 avec fallback vers GPT-4o (optimisé pour AWS)
 try:
-    print("🔄 Tentative de connexion avec GPT-4.1...")
+    print("🔄 Initialisation GPT-4.1...")
     llm = ChatOpenAI(
         temperature=0.2,
         model="gpt-4.1",
@@ -54,9 +79,7 @@ try:
         max_tokens=350,
         callbacks=[StreamPrintCallback()]
     )
-    # Test rapide pour vérifier que le modèle fonctionne
-    test_response = llm.invoke("test")
-    print("✅ GPT-4.1 connecté avec succès !")
+    print("✅ GPT-4.1 initialisé (test de connexion différé)")
 except Exception as e:
     print(f"⚠️ GPT-4.1 non disponible ({str(e)[:50]}...), fallback vers GPT-4o")
     llm = ChatOpenAI(
@@ -95,18 +118,33 @@ def get_memory(chat_id: str) -> ConversationSummaryBufferMemory:
     )
     return memory
 
-
 def load_prompt_template():
-    with open("prompt_base.txt", encoding="utf-8") as f:
-        return f.read().strip()
+    """Charge le template de prompt français avec chemin absolu."""
+    try:
+        # Chemin absolu pour AWS App Runner
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        prompt_path = os.path.join(os.path.dirname(base_path), "prompt_base.txt")
+        with open(prompt_path, encoding="utf-8") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        # Fallback pour développement local
+        with open("prompt_base.txt", encoding="utf-8") as f:
+            return f.read().strip()
 
 def load_prompt_template_es():
-    with open("prompt_base_es.txt", encoding="utf-8") as f:
-        return f.read().strip()
+    """Charge le template de prompt espagnol avec chemin absolu."""
+    try:
+        # Chemin absolu pour AWS App Runner
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        prompt_path = os.path.join(os.path.dirname(base_path), "prompt_base_es.txt")
+        with open(prompt_path, encoding="utf-8") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        # Fallback pour développement local
+        with open("prompt_base_es.txt", encoding="utf-8") as f:
+            return f.read().strip()
 
-# Cache global des prompts (chargés une seule fois par process)
-PROMPT_FR = load_prompt_template()
-PROMPT_ES = load_prompt_template_es()
+
 
 async def detect_language(text: str) -> str:
     """
@@ -156,20 +194,25 @@ async def get_or_detect_user_language_and_prompt(chat_id: str, user_input: str) 
     redis_key = f"user_language:{chat_id}"
     
     # Vérifier si la langue est déjà stockée
-    stored_language = redis_client.get(redis_key)
-    if stored_language:
-        language = stored_language.decode('utf-8')
-        # Retourner le prompt depuis le cache global
-        return language, (PROMPT_ES if language == 'es' else PROMPT_FR)
+    redis_client = get_redis_client()
+    if redis_client:
+        stored_language = redis_client.get(redis_key)
+        if stored_language:
+            language = stored_language.decode('utf-8')
+            # Charger le bon prompt depuis les fichiers
+            prompt = load_prompt_template_es() if language == 'es' else load_prompt_template()
+            return language, prompt
     
     # Première fois : détecter la langue du premier message
     detected_language = await detect_language(user_input)
     
     # Stocker pour 30 jours
-    redis_client.set(redis_key, detected_language, ex=60 * 60 * 24 * 30)
+    if redis_client:
+        redis_client.set(redis_key, detected_language, ex=60 * 60 * 24 * 30)
     
-    # Retourner le prompt depuis le cache global
-    return detected_language, (PROMPT_ES if detected_language == 'es' else PROMPT_FR)
+    # Charger le bon prompt depuis les fichiers
+    prompt = load_prompt_template_es() if detected_language == 'es' else load_prompt_template()
+    return detected_language, prompt
 
 
 async def get_user_profile_summary(chat_id: str, messages: list) -> str:

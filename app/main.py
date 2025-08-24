@@ -18,6 +18,16 @@ class ChatRequest(BaseModel):
 async def root():
     return {"message": "🤖 Agent CCI (événements + base vectorielle + mémoire longue) — prêt !"}
 
+@app.get("/health")
+async def health_check():
+    """Endpoint de santé pour AWS App Runner."""
+    from datetime import datetime
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "service": "whatsapp-agent-cci"
+    }
+
 @app.post("/chat")
 async def chat(req: ChatRequest):
     try:

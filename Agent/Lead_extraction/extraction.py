@@ -11,8 +11,17 @@ llm = ChatOpenAI(
 )
 
 def load_extraction_prompt_template():
-    with open("prompt_extraction.txt", encoding="utf-8") as f:
-        return f.read().strip()
+    """Charge le template de prompt d'extraction avec chemin absolu."""
+    try:
+        # Chemin absolu pour AWS App Runner
+        base_path = os.path.dirname(os.path.abspath(__file__))
+        prompt_path = os.path.join(base_path, "prompt_extraction.txt")
+        with open(prompt_path, encoding="utf-8") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        # Fallback pour développement local
+        with open("prompt_extraction.txt", encoding="utf-8") as f:
+            return f.read().strip()
     
     
 def has_calendly_link(text: str) -> bool:
@@ -46,4 +55,3 @@ def extract_lead_info(history: str) -> dict:
             "score": 1,
             "date": datetime.now(timezone.utc).strftime("%Y-%m-%d")
         }
-        
