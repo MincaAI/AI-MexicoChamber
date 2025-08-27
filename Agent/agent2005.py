@@ -79,7 +79,7 @@ try:
     # Initialisation GPT-4.1 (prints supprimés pour WhatsApp latence)
     llm = ChatOpenAI(
         temperature=0.2,
-        model="gpt-4.1",
+        model="gpt-4.1-mini",
         streaming=False,  # Désactivé pour WhatsApp latence
         max_tokens=350
     )
@@ -88,7 +88,7 @@ except Exception as e:
     print(f"⚠️ GPT-4.1 non disponible ({str(e)[:50]}...), fallback vers GPT-4o")
     llm = ChatOpenAI(
         temperature=0.2,
-        model="gpt-4o",
+        model="gpt-4o-mini",
         streaming=False,  # Désactivé pour WhatsApp latence
         max_tokens=350
     )
@@ -117,7 +117,7 @@ def get_memory(chat_id: str) -> ConversationSummaryBufferMemory:
         memory_key="chat_history",
         chat_memory=history,
         return_messages=True,
-        max_token_limit=2000
+        max_token_limit=800
     )
     return memory
 
@@ -223,10 +223,10 @@ async def get_user_profile_summary(chat_id: str, messages: list) -> str:
     if redis_client.exists(redis_key):
         return redis_client.get(redis_key).decode("utf-8")
 
-    if len(messages) < 11:
+    if len(messages) < 24:
         return ""
 
-    full_chat = "\n".join([f"{msg.type.upper()} : {msg.content}" for msg in messages])
+    full_chat = "\n".join([f"{msg.type.upper()} : {msg.content}" for msg in messages[-40:]])
     prompt_resume = (
         "Voici une conversation WhatsApp. Résume-la en 5 phrases claires :\n"
         "1. Qui est la personne, son entreprise ? (Nom si connu)\n"
@@ -252,7 +252,7 @@ async def agent_response(user_input: str, chat_id: str) -> str:
     
     memory.chat_memory.add_message(HumanMessage(content=user_input))
     messages = memory.chat_memory.messages
-    short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in messages[-30:]])
+    short_term_memory = "\n".join([f"{msg.type.capitalize()} : {msg.content}" for msg in messages[-12:]])
     user_profile_summary = await get_user_profile_summary(chat_id, messages)
     
     # Optimisation : récupération directe langue depuis Redis si déjà stockée
