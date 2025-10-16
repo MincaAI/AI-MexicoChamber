@@ -184,6 +184,12 @@ Reembolso de IVA
 Folleto: https://drive.google.com/file/d/1MgItogJYwhFViZeUmy2BrVp5JtrbanAH/view?usp=sharing
 Cita: Enlace del Calendly de Ricardo Salazar – https://calendly.com/ricardo-salazar-cfmci
 Contacto: ricardo.salazar@cfmci.com
+
+CCImpact - Francia y Mexico, unidos para un impacto responsable
+Folleto : https://drive.google.com/file/d/1YsxnqswqaZe4REJQH28miuVD8rfGJT74/view?usp=sharing 
+Cita Lola Van Peteghem : https://calendly.com/lola-vanpeteghem-cfmci
+Contacto : lola.vanpeteghem@cfmci.com
+
 </CONTACTO_CALENDLY_SERVICIO>
 
 <TARIF_ADHESION>
